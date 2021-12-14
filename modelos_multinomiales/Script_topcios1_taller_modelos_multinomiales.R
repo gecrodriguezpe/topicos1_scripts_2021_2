@@ -19,7 +19,7 @@ library(forecast)
 library(knitr)    # Para utilizar la función kable
 
 # Defino el directorio de trabajo:
-setwd("C:/Users/57319/Downloads")
+setwd("~/GitHub/Additional_topics/topicos1_scripts_2021_2/modelos_multinomiales")
 
 # Nota: Otros paquetes que pueden ser utilizados para realizar 
 #       modelos multinomiales en R son: 
@@ -293,5 +293,113 @@ PiCoke
 # cada individuo tendrá que enfrentar posiblemente precios 
 # diferentes para cada tipo de gaseosa
 
+# Adicionalmente, es posible extener el modelo incluyendo otros
+# regresores además del precio, por ejemplo, regresores que 
+# reflejen características individuales 
 
+# Ejemplo 3: Modelo Probit ordenado usando la función MCMCoprobit del paquete MCMCpack ----
 
+# En un modelo probit ordenado el orden de las elecciones es importante
+# a diferencia de un modelo logit multinomial o un modelo logit
+# condicional. 
+
+# Para un modelo ordenado es posible estimar: 
+### probit ordenado: Los errores siguen una distribución normal estándar 
+### logit ordenado: Los errores siguen una distribución logit estándar 
+
+# Para el siguiente ejemplo se utilizara la base de datos "nesl_small"
+# la misma que se utilizó en el ejemplo 1, y lo que se busca es 
+# estimar un modelo probit ordenado. 
+
+# Al ser un modelo probit ordenado, las categorias de la variable
+# categórica dependiente están ordenadas. 
+
+## grades: Es un índice de notas de secundaria, donde menores valores
+##         indican mejores notas (variable numérica)
+## psechoice: Variable que indica la elección de educación 
+##            post-secundaria (variable categórica con 3 categorias)
+## Categorias de psechoice (Cada individuo escoge solo 1 de ´las 3 categorias)
+### psechoice = 1:  Ningún tipo de educación post-secundaria
+### psechoice = 2:  2 años de educación post-secundaria (nivel técnico)
+### psechoice = 3:  4 años de educación post-secundaria (nivel universitario)
+
+# Para un modelo probit ordenado, siempre se parte de una ecuación latente: 
+
+# y_i* = \beta GRADES_i + e_i
+# Donde la variable y_i (variable categórica discreta con 3 categorias
+# asume una determianda categoria si la variable latente supera
+# un nivel determinado nivel o threshold)
+
+# y_i = 3 (4 años de educación post-secundaria) si y_i* > mu_2
+# y_i = 2 (2 años de educación post-secundaria) si mu_2 > y_i* > mu_1
+# y_i = 1 (1 sin edudación post-secundaria) si mu_1 > y_i*
+
+# Donde mu_1 es el threshold para pasar de no tener educación post-secundaria
+# a tener 2 años de educación post-secundaria y mu_2 es el threshold para pasar
+# de tener 2 años de educación secundaria a tener 4 años de educación secundaria
+
+# Se estima el modelo probit ordenado
+# Un modelo probit ordenado se estima maximizando una función de 
+# maxima verosimilitud numéricamente (para ello el comando emplea
+# MCMC)
+nels.oprobit <- MCMCoprobit(PSECHOICE ~ GRADES, 
+                            data=nels_small, mcmc=10000) #mcmc es el número de itreaciones MCMC 
+
+sOprobit <- summary(nels.oprobit) 
+tabOprobit <- sOprobit$statistics[, 1:2]
+
+# La siguiente tabla da los coeficientes asociados al modelo
+# probit ordenado estimado
+kable(tabOprobit, digits=4, align="c",
+      caption="Ordered probit estimates for the 'nels' problem")
+
+# No obstante, dichos parámetros no se pueden interpretar 
+# directamente como los parámetros mu_1, mu_2 y \beta descritos
+# anteriormente. Para ello, hay que hacer una transformación
+# a los coeficientes de la tabal anterior para encontrar
+# los valores de los umbrales (mu_1 y mu_2) y del parámetros \beta
+# que acompaña a la variable GRAES en la ecuación latente
+
+intercept = tabOprobit[1,1]
+GRADES = tabOprobit[2,1]
+gamma2 = tabOprobit[3,1]
+  
+# Los valores para mu_1, mu_2 y beta transformando los coeficientes
+# encontrados por el modelo: 
+
+mu1 = - intercept
+beta = GRADES
+mu2 = gamma2 - intercept
+  
+# Ahora bien, se van a extraer dos estudiantes de la muestra. 
+# Un estudiante, cuyas notas de secundaria están en la media de la
+# muestra y otro estudiante cuyas notas están en el cuántil más alto
+# de la muestra
+
+xGrade = c(mean(nels_small$GRADES), 
+           quantile(nels_small$GRADES, 0.05))
+
+# Las probabilidades de que cada uno de los estudiantes esté 
+# en una determinado categoría de educación post-secundaria son:
+
+# Categoría1: Sin educación post-secundaria
+prob1 = pnorm(mu1 - beta * xGrade); prob1
+# Categoría2: 2 años de educación post-secundaria
+prob2 = pnorm(mu2 - beta * xGrade)-pnorm(mu1 - beta * xGrade); prob2
+# Categoría3: 4 años de educación post-secundaria
+prob3 = 1 - pnorm(mu2 - beta * xGrade); prob3
+
+# Los efectos marginales de que cada uno de los estudiantes
+# para cada categoría son: 
+
+# Categoría1: Sin educación post-secundaria
+Dp1DGrades = -pnorm(mu1 - beta * xGrade) * beta; Dp1DGrades
+# Categoría2: 2 años de educación post-secundaria
+Dp2DGrades = (pnorm(mu1- beta * xGrade)-pnorm(mu2 - beta * xGrade)) * beta; Dp2DGrades
+# Categoría3: 4 años de educación post-secundaria
+Dp3DGrades = pnorm(mu2 - beta * xGrade) * beta; Dp3DGrades
+
+# Por tanto, el efecto marginal de las notas de secundaria
+# en la probabiliad de atender 4 años de educación post-secundaria es: 
+# −0.143  para el estudiante con notas en la media y −0.031 para
+# el estudiante con las notas en el 5 % más alto de la muestra
